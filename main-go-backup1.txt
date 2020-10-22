@@ -1,0 +1,107 @@
+package main
+
+import (
+	"github.com/pulumi/pulumi-alicloud/sdk/v2/go/alicloud"
+	"github.com/pulumi/pulumi-alicloud/sdk/v2/go/alicloud/ecs"
+	"github.com/pulumi/pulumi-alicloud/sdk/v2/go/alicloud/vpc"
+	"github.com/pulumi/pulumi/sdk/v2/go/pulumi"
+)
+
+func DerefString(s *string) string {
+	if s != nil {
+		return *s
+	}
+	return "cn-beijing-b"
+}
+
+func main() {
+
+	description := "asfasdf jalsdfj alsdfj alsf asdf asfjaksfj kasf "
+	name := "vpc_name_test"
+	cidr := "192.168.0.0/16"
+	vswitch1_cidr := "192.168.0.0/24"
+	instanceType1 := "ecs.s6-c1m2.small"
+	fortigate622ImageId := "m-2zeikw0lpc9k4fubwplw"
+
+	vpcArgs := &vpc.NetworkArgs{
+		CidrBlock:   pulumi.String(cidr),
+		Description: pulumi.String(description),
+		Name:        pulumi.String(name),
+	}
+
+	pulumi.Run(func(ctx *pulumi.Context) error {
+		vpc1, err := vpc.NewNetwork(ctx, "vpc-1", vpcArgs)
+		if err != nil {
+			return err
+		}
+
+		zonesDs, err := alicloud.GetZones(ctx, &alicloud.GetZonesArgs{
+			AvailableInstanceType: &instanceType1,
+		})
+
+		if err != nil {
+			return err
+		}
+
+		az1 := zonesDs.Zones[0].Id
+
+		if az1 == "" {
+			az1 = "cn-beijing-b"
+		}
+
+		vswitch, err := vpc.NewSwitch(ctx, "switch-1", &vpc.SwitchArgs{
+			VpcId: vpc1.ID(),
+			//AvailabilityZone : pulumi.String( "cn-beijing-b"),
+			AvailabilityZone: pulumi.String(az1),
+			CidrBlock:        pulumi.String(vswitch1_cidr),
+		})
+
+		if err != nil {
+			return err
+		}
+
+		group, err := ecs.NewSecurityGroup(ctx, "web-secgrp", &ecs.SecurityGroupArgs{
+			VpcId: vpc1.ID()})
+
+		if err != nil {
+			return err
+		}
+
+		sgrule1, err := ecs.NewSecurityGroupRule(ctx, "sg-rule1", &ecs.SecurityGroupRuleArgs{
+			SecurityGroupId: group.ID(),
+			IpProtocol:      pulumi.String("tcp"),
+			Type:            pulumi.String("ingress"),
+			PortRange:       pulumi.String("22/22"),
+			CidrIp:          pulumi.String("0.0.0.0/0"),
+		})
+
+		if err != nil {
+			return err
+		}
+
+		instance1, err := ecs.NewInstance(ctx, "instance-1", &ecs.InstanceArgs{
+			AvailabilityZone:       pulumi.String(az1),
+			ImageId:                pulumi.String(fortigate622ImageId),
+			VswitchId:              vswitch.ID(),
+			InternetMaxBandwidthOut: pulumi.Int(5),
+			InstanceType:           pulumi.String(instanceType1),
+			SecurityGroups:         pulumi.StringArray{group.ID()},
+			InstanceName:           pulumi.String("instance1CreatedbyPulumi"),
+			InstanceChargeType:     pulumi.String("PostPaid"),
+			DryRun:			pulumi.Bool(false),
+			
+		})
+
+		if err != nil {
+			return err
+		}
+
+		ctx.Export("vpcName", vpc1.ID())
+		ctx.Export("vswitchName", vswitch.ID())
+		ctx.Export("sgName", group.ID())
+		ctx.Export("sgrule1", sgrule1.ID())
+		ctx.Export("instance1", instance1.ID())
+		ctx.Export("instance1publicIP",instance1.PublicIp)
+		return nil
+	})
+}

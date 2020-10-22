@@ -1,0 +1,3 @@
+name: aliyun
+runtime: go
+description: A minimal AliCloud Go Pulumi program
